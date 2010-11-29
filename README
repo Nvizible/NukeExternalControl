@@ -1,0 +1,44 @@
+Nuke External Control
+
+This allows you to call Nuke Python commands from outside Nuke
+
+
+Installation
+============
+
+Place nukeCommandServer.py somewhere in $NUKE_PATH
+Place nukeCommandClient.py somewhere in $PYTHONPATH
+
+Edit your Nuke menu.py and add the following lines:
+
+---------------------------
+import nukeCommandServer
+nukeCommandServer.nuke_command_server()
+---------------------------
+
+Usage
+=====
+
+To initialise the external end, run the following (while Nuke is running):
+
+---------------------------
+import nukeCommandClient
+conn = nukeCommandClient.NukeConnection()
+nuke = conn.nuke
+---------------------------
+
+From that point on, you can run anything that you would inside Nuke from outside:
+
+---------------------------
+for n in nuke.selectedNodes():
+	print n.name()
+	n['disable'].setValue(True)
+
+blur = nuke.createNode("Blur")
+---------------------------
+
+If you need to import a module inside Nuke, you can run:
+
+---------------------------
+nukescripts = conn.import_module("nukescripts")
+---------------------------
