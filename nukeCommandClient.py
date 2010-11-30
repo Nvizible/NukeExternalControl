@@ -5,23 +5,41 @@ basicTypes = [int, float, complex, str, unicode, buffer, xrange, bool, type(None
 listTypes = [list, tuple, set, frozenset]
 dictTypes = [dict]
 
+class NukeConnectionError(StandardError):
+	pass
+
 class NukeConnection:
-	def __init__(self):
+	def __init__(self, host = "localhost"):
 		self._objects = {}
 		self._functions = {}
+		self._host = host
+		
+		if not self.test_connection():
+			raise NukeConnectionError("Connection with Nuke failed")
 		
 	def send(self, data):
-		host = 'localhost'
 		port = 54261
 		size = 1024 * 1024
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		s.connect((host, port))
-		s.send(data)
-		result = s.recv(size)
-		s.close()
+		
+		try:
+			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+			s.connect((self._host, port))
+			s.send(data)
+			result = s.recv(size)
+			s.close()
+		except socket.error:
+			raise NukeConnectionError("Connection with Nuke failed")
+			
 		return result
 	
-	def get(self, item_type, item_id, parameters):
+	def test_connection(self):
+		try:
+			self.get("test")
+			return True
+		except NukeConnectionError, e:
+			return False
+	
+	def get(self, item_type, item_id = -1, parameters = None):
 		try:
 			data = {'action': item_type, 'id': item_id, 'parameters': parameters}
 			returnData = self.send(pickle.dumps(self.encode(data)))
@@ -50,16 +68,16 @@ class NukeConnection:
 		return self.decode(self.get("call", obj_id, parameters))
 	
 	def get_object_length(self, obj_id):
-		return self.decode(self.get("len", obj_id, None))
+		return self.decode(self.get("len", obj_id))
 	
 	def get_object_string(self, obj_id):
-		return self.decode(self.get("str", obj_id, None))
+		return self.decode(self.get("str", obj_id))
 	
 	def get_object_repr(self, obj_id):
-		return self.decode(self.get("repr", obj_id, None))
+		return self.decode(self.get("repr", obj_id))
 	
 	def import_module(self, module_name):
-		return self.decode(self.get("import", -1, module_name))
+		return self.decode(self.get("import", parameters = module_name))
 	
 	def recode_data(self, data, recode_object_func):
 		if type(data) in basicTypes:
