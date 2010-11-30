@@ -2,6 +2,7 @@ import pickle
 import socket
 import threading
 import imp
+import nuke
 
 basicTypes = [int, float, complex, str, unicode, buffer, xrange, bool, type(None)]
 listTypes = [list, tuple, set, frozenset]
@@ -90,7 +91,7 @@ class NukeInternal:
 			elif data['action'] == "setitem":
 				obj[params[0]] = params[1]
 			elif data['action'] == "call":
-				result = obj(*params['args'], **params['kwargs'])
+				result = nuke.executeInMainThreadWithResult(obj, args=params['args'], kwargs=params['kwargs'])
 			elif data['action'] == "len":
 				result = len(obj)
 			elif data['action'] == "str":
