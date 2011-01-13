@@ -9,21 +9,30 @@ class NukeConnectionError(StandardError):
 	pass
 
 class NukeConnection:
-	def __init__(self, host = "localhost"):
+	def __init__(self, host = "localhost", instance = 0):
 		self._objects = {}
 		self._functions = {}
 		self._host = host
+		start_port = 54200 + instance
+		end_port = 54300
+		self._port = self.find_connection_port(start_port, end_port)
 		
-		if not self.test_connection():
+		if self._port == -1:
 			raise NukeConnectionError("Connection with Nuke failed")
-		
-	def send(self, data):
-		port = 54261
+	
+	def find_connection_port(self, start_port, end_port):
+		for port in range(start_port, end_port + 1):
+			self._port = port
+			if self.test_connection():
+				return port
+		return -1
+	
+	def send(self, data):#
 		size = 1024 * 1024
 		
 		try:
 			s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-			s.connect((self._host, port))
+			s.connect((self._host, self._port))
 			s.send(data)
 			result = s.recv(size)
 			s.close()

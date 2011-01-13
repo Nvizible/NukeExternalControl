@@ -8,22 +8,39 @@ basicTypes = [int, float, complex, str, unicode, buffer, xrange, bool, type(None
 listTypes = [list, tuple, set, frozenset]
 dictTypes = [dict]
 
-def nuke_command_server():
-  t = threading.Thread(None, NukeInternal)
-  t.start()
+class NukeConnectionError(StandardError):
+	pass
 
+def nuke_command_server():
+	t = threading.Thread(None, NukeInternal)
+	t.setDaemon(True)
+	t.start()
+	
 class NukeInternal:
 	def __init__(self):
 		self._objects = {}
 		self._next_object_id = 0
 		
 		host = ''
-		port = 54261
+		start_port = 54200
+		end_port = 54300
 		backlog = 5
 		size = 1024 * 1024
 		
-		s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-		s.bind((host, port))
+		bound_port = False
+		for port in range(start_port, end_port + 1):
+			try:
+				s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+				print "Trying port %d" % port
+				s.bind((host, port))
+				bound_port = True
+				break
+			except Exception, e:
+				pass
+		
+		if not bound_port:
+			raise NukeConnectionError("Cannot find port to bind to")
+			
 		s.listen(backlog)
 		
 		while 1:
@@ -84,7 +101,7 @@ class NukeInternal:
 			elif data['action'] == "setattr":
 				setattr(obj, params[0], params[1])
 			elif data['action'] == "getitem":
-				# If we're actually getting from vars(), then raise NameError instead of KeyError
+				# If we're actually getting from globals(), then raise NameError instead of KeyError
 				if data['id'] == -1 and params not in obj:
 					raise NameError("name '%s' is not defined" % params)
 				result = obj[params]
