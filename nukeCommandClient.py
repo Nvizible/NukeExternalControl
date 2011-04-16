@@ -53,6 +53,16 @@ class NukeConnection:
 			data = {'action': item_type, 'id': item_id, 'parameters': parameters}
 			returnData = self.send(pickle.dumps(self.encode(data)))
 			result = pickle.loads(returnData)
+			if isinstance(result, dict) and 'type' in result and result['type'] == "NukeTransferPartialObject":
+			    data = result['data']
+			    nextPart = 1
+			    while nextPart < result['part_count']:
+			        returnData = self.send(pickle.dumps({'type': "NukeTransferPartialObjectRequest", 'part': nextPart}))
+			        result = pickle.loads(returnData)
+			        data += result['data']
+			        nextPart += 1
+			    
+			    result = pickle.loads(data)
 		except Exception, e:
 			raise e
 		
