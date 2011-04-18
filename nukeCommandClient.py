@@ -23,6 +23,7 @@ dictTypes = [dict]
 # any flags or arguments).
 NUKE_EXEC = 'Nuke'
 
+MAX_SOCKET_BYTES = 16384
 
 class NukeConnectionError(StandardError):
 	pass
@@ -33,7 +34,7 @@ class NukeManagerError(NukeConnectionError):
 class NukeServerError(NukeConnectionError):
 	pass
 
-class NukeConnection:
+class NukeConnection():
 	'''
 	If 'port' is specified, the client will attempt to connect
 	to a command server on that port, raising an exception
@@ -58,7 +59,7 @@ class NukeConnection:
 			if not self.test_connection():
 				raise NukeConnectionError("Could not connect to Nuke command server on port %d" % self._port)
 			self.is_active = True
-
+	
 	def find_connection_port(self, start_port, end_port):
 		for port in range(start_port, end_port + 1):
 			self._port = port
@@ -90,8 +91,32 @@ class NukeConnection:
 	def get(self, item_type, item_id = -1, parameters = None):
 		try:
 			data = {'action': item_type, 'id': item_id, 'parameters': parameters}
-			returnData = self.send(pickle.dumps(self.encode(data)))
+            encoded = pickle.dumps(self.encode(data))
+            
+            if len(encoded) > MAX_SOCKET_BYTES:
+                encodedBits = []
+                while encoded:
+                    encodedBits.append(encoded[:MAX_SOCKET_BYTES])
+                    encoded = encoded[MAX_SOCKET_BYTES:]
+                
+                for i in range(len(encodedBits)):
+                    result = pickle.loads(self.send(pickle.dumps({'type': "NukeTransferPartialObject", 'part': i, 'part_count': len(encodedBits), 'data': encodedBits[i]})))
+                    if i < (len(encodedBits) - 1):
+                        if not (isinstance(result, dict) and 'type' in result and result['type'] == "NukeTransferPartialObjectRequest" and 'part' in result and result['part'] == i+1):
+                            raise NukeConnectionError("Unexpected response to partial object")
+            else:
+                result = pickle.loads(self.send(encoded))
+
+            if isinstance(result, dict) and 'type' in result and result['type'] == "NukeTransferPartialObject":
+                data = result['data']
+                nextPart = 1
+                while nextPart < result['part_count']:
+                    returnData = self.send(pickle.dumps({'type': "NukeTransferPartialObjectRequest", 'part': nextPart}))
 			result = pickle.loads(returnData)
+                    data += result['data']
+                    nextPart += 1
+                
+                result = pickle.loads(data)
 		except Exception, e:
 			raise e
 		
@@ -184,14 +209,22 @@ class NukeConnection:
 	def __getattr__(self, attrname):
 		return self.get_object_item(-1, attrname)
 
+    def __getitem__(self, itemname):
+        return self.__getattr__(itemname)
 
-class NukeObject:
+    def __repr__(self):
+        return object.__repr__(self).replace("instance object", "NukeConnection instance")
+    
+    def __str__(self):
+        return self.__repr__()
+
+class NukeObject():
 	def __init__(self, connection, id):
 		self.__dict__['_id'] = id
 		self.__dict__['_connection'] = connection
 	
 	def __getattr__(self, attrname):
-		if attrname[0] in self.__dict__:
+        if attrname[0] == "_":
 			return self.__dict__[attrname]
 		else:
 			return self._connection.get_object_attribute(self._id, attrname)

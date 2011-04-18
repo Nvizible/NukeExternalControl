@@ -8,6 +8,8 @@ basicTypes = [int, float, complex, str, unicode, buffer, xrange, bool, type(None
 listTypes = [list, tuple, set, frozenset]
 dictTypes = [dict]
 
+MAX_SOCKET_BYTES = 16384
+
 class NukeConnectionError(StandardError):
 	pass
 
@@ -15,7 +17,7 @@ def nuke_command_server():
 	t = threading.Thread(None, NukeInternal)
 	t.setDaemon(True)
 	t.start()
-
+	
 class NukeInternal:
 	def __init__(self, port=None):
 		self._objects = {}
@@ -48,7 +50,7 @@ class NukeInternal:
 			
 		s.listen(backlog)
 		self.start_server(s)
-
+		
 	def start_server(self, sock):
 		'''
 		Starts the main server loop
@@ -106,8 +108,7 @@ class NukeInternal:
 	def decode(self, data):
 		return self.decode_data(pickle.loads(data))
 
-	def get(self, data_string):
-		data = self.decode(data_string)
+    def get(self, data):
 		obj = self.get_object(data['id'])
 		params = data['parameters']
 		result = None
@@ -140,13 +141,46 @@ class NukeInternal:
 		except Exception, e:
 			result = e
 		
-		encoded = self.encode(result)
+        return result
+    
+    def receive(self, data_string):
+        data = self.decode(data_string)
 		
+        if isinstance(data, dict) and 'type' in data and data['type'] == "NukeTransferPartialObjectRequest":
+            if data['part'] in self.partialObjects:
+                encoded = self.partialObjects[data['part']]
+                del self.partialObjects[data['part']]
 		return encoded
 	
-	def receive(self, data):
-		return self.get(data)
+        if isinstance(data, dict) and 'type' in data and data['type'] == "NukeTransferPartialObject":
+            if data['part'] == 0:
+                self.partialData = ""
+            self.partialData += data['data']
 		
+            if data['part'] == (data['part_count'] - 1):
+                data = pickle.loads(self.partialData)
+            else:
+                nextPart = data['part'] + 1
+                return pickle.dumps({'type': "NukeTransferPartialObjectRequest", 'part': nextPart})
+            
+        encoded = self.encode(self.get(data))
+        
+        if len(encoded) > MAX_SOCKET_BYTES:
+            encodedBits = []
+            while encoded:
+                encodedBits.append(encoded[:MAX_SOCKET_BYTES])
+                encoded = encoded[MAX_SOCKET_BYTES:]
+            
+            self.partialObjects = {}
+            for i in range(len(encodedBits)):
+                self.partialObjects[i] = pickle.dumps({'type': "NukeTransferPartialObject", 'part': i, 'part_count': len(encodedBits), 'data': encodedBits[i]})
+            
+            encoded = self.partialObjects[0]
+            del self.partialObjects[0]
+
+        return encoded
+
+        
 	def get_object(self, id):
 		if id == -1:
 			return globals()
