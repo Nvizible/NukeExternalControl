@@ -62,10 +62,13 @@ class NukeInternal:
                 newList.append(self.recode_data(i, recode_object_func))
             return type(data)(newList)
         elif type(data) in dictTypes:
-            newDict = {}
-            for k in data:
-                newDict[self.recode_data(k, recode_object_func)] = self.recode_data(data[k], recode_object_func)
-            return newDict
+            if 'type' in data and data['type'] == "NukeTransferObject":
+                return recode_object_func(data)
+            else:
+                newDict = {}
+                for k in data:
+                    newDict[self.recode_data(k, recode_object_func)] = self.recode_data(data[k], recode_object_func)
+                return newDict
         else:
             return recode_object_func(data)
 
