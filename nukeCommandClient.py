@@ -383,6 +383,6 @@ if __name__ == '__main__':
     manager_port = None
 
     if len(sys.argv) > 1:
-        manager_port = int(sys.argv[1].strip())
+        manager_port = int(sys.argv[1])
 
     start_managed_nuke_server(manager_port)
