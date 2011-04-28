@@ -299,6 +299,7 @@ class NukeCommandManager():
         bound_port = False
 
         manager = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        manager.settimeout(10.0)
         manager.bind(('', 0))
         bound_port = True
         self.manager_port = manager.getsockname()[1]
@@ -325,7 +326,12 @@ class NukeCommandManager():
         startTime = time.time()
         timeout = startTime + 10 # Timeout after 10 seconds of waiting for server
         while True:
-            server, address = self.manager_socket.accept()
+            try:
+                # This will time out after 10 seconds based on the socket settings
+                server, address = self.manager_socket.accept()
+            except socket.timeout:
+                self.shutdown_server()
+                raise NukeManagerError("Server process failed to start properly.")
             data = server.recv(bufsize)
             if data:
                 serverData = pickle.loads(data)
