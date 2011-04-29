@@ -295,6 +295,7 @@ class NukeCommandManager():
         self.manager_socket = None
         self.server_port = -1
         self.client = None
+        self.nuke_stdout, self.nuke_stderr = None, None
 
         bound_port = False
 
@@ -308,11 +309,6 @@ class NukeCommandManager():
         if (not bound_port) or (self.manager_port == -1):
             raise NukeManagerError("MANAGER: Cannot find port to bind to")
 
-        # Make sure the port number has a trailing space... this is a bug in Nuke's
-        # Python argument parsing (logged with The Foundry as Bug 17918)
-        threadArgs = ([NUKE_EXEC, '-t', '-m', '1', '--', inspect.getabsfile(self.__class__), '%d ' % self.manager_port],)
-        self.serverThread = threading.Thread(None, subprocess.call, args=threadArgs, kwargs={'stdout':open(devnull)})
-
     def __enter__(self):
         if not self.manager_socket:
             raise NukeManagerError("Manager failed to initialize socket.")
@@ -322,27 +318,44 @@ class NukeCommandManager():
 
         # Start the server thread and wait for it to call back to the 
         # manager with its success status and bound port
-        self.serverThread.start()
+
+        # Make sure the port number has a trailing space... this is a bug in Nuke's
+        # Python argument parsing (logged with The Foundry as Bug 17918)
+        procArgs = ([NUKE_EXEC, '-t', '-m', '1', '--', inspect.getabsfile(self.__class__), '%d ' % self.manager_port],)
+        self.serverProc = subprocess.Popen(stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE,
+                                *procArgs)
         startTime = time.time()
         timeout = startTime + 10 # Timeout after 10 seconds of waiting for server
-        while True:
+        try:
+            while True:
+                try:
+                    # This will time out after 10 seconds based on the socket settings
+                    server, address = self.manager_socket.accept()
+                except socket.timeout:
+                    self.shutdown_server()
+                    raise NukeManagerError("Server process failed to start properly.")
+                data = server.recv(bufsize)
+                if data:
+                    serverData = pickle.loads(data)
+                    server.close()
+                    if not serverData[0]:
+                        raise NukeServerError("Server could not find port to bind to.")
+                    self.server_port = serverData[1]
+                    break
+                if time.time() >= timeout:
+                    self.shutdown_server()
+                    raise NukeManagerError("Manager timed out waiting for server connection.")
+        except NukeConnectionError, e:
             try:
-                # This will time out after 10 seconds based on the socket settings
-                server, address = self.manager_socket.accept()
-            except socket.timeout:
                 self.shutdown_server()
-                raise NukeManagerError("Server process failed to start properly.")
-            data = server.recv(bufsize)
-            if data:
-                serverData = pickle.loads(data)
-                server.close()
-                if not serverData[0]:
-                    raise NukeServerError("Server could not find port to bind to.")
-                self.server_port = serverData[1]
-                break
-            if time.time() >= timeout:
-                self.shutdown_server()
-                raise NukeManagerError("Manager timed out waiting for server connection.")
+            except Exception:
+                pass
+            
+            self.nuke_stdout, self.nuke_stderr = self.serverProc.communicate()
+            e.nuke_sdout, e.nuke_stderr = self.nuke_stdout, self.nuke_stderr 
+            raise
+            
         self.manager_socket.close()
         try:
             self.client = NukeConnection(self.server_port)
@@ -353,7 +366,7 @@ class NukeCommandManager():
 
     def __exit__(self, type, value, traceback):
         self.client.shutdown_server()
-        self.serverThread.join()
+        self.nuke_stdout, self.nuke_stderr = self.serverProc.communicate()
 
     def shutdown_server(self):
         '''
