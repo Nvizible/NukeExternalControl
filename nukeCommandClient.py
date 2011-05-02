@@ -25,6 +25,9 @@ NUKE_EXEC = 'Nuke'
 
 MAX_SOCKET_BYTES = 16384
 
+class NukeLicenseError(StandardError):
+    pass
+
 class NukeConnectionError(StandardError):
     pass
 
@@ -33,6 +36,7 @@ class NukeManagerError(NukeConnectionError):
 
 class NukeServerError(NukeConnectionError):
     pass
+
 
 class NukeConnection():
     '''
@@ -267,13 +271,9 @@ class NukeCommandManager():
     When it starts up, it establishes a manager socket on an
     available OS-assigned port.
 
-    At this point, it creates a bound thread that will call a Nuke
-    instance in terminal mode and establish a managed command server
-    within it.
-
-    When the manager's __enter__ method is called, the server thread
-    is started. The manager then waits for the managed server to call
-    back with its status and bound port.
+    When the manager's __enter__ method is called, the server
+    subprocess is started. The manager then waits for the managed
+    server to call back with its status and bound port.
 
     A NukeConnection instance is then started using the port number
     returned by the managed server's callback. This instance is
@@ -290,11 +290,13 @@ class NukeCommandManager():
     The __exit__ method then waits for the server thread to exit by
     calling its '.join()' method.
     '''
-    def __init__(self):
+    def __init__(self, license_retry_count=5, license_retry_delay=5):
         self.manager_port = -1
         self.manager_socket = None
         self.server_port = -1
         self.client = None
+        self.license_retry_count = license_retry_count
+        self.license_retry_delay = license_retry_delay
         self.nuke_stdout, self.nuke_stderr = None, None
 
         bound_port = False
@@ -313,49 +315,12 @@ class NukeCommandManager():
         if not self.manager_socket:
             raise NukeManagerError("Manager failed to initialize socket.")
         backlog = 5
-        bufsize = 4096
         self.manager_socket.listen(backlog)
 
-        # Start the server thread and wait for it to call back to the 
+        # Start the server process and wait for it to call back to the 
         # manager with its success status and bound port
+        self.start_server()
 
-        # Make sure the port number has a trailing space... this is a bug in Nuke's
-        # Python argument parsing (logged with The Foundry as Bug 17918)
-        procArgs = ([NUKE_EXEC, '-t', '-m', '1', '--', inspect.getabsfile(self.__class__), '%d ' % self.manager_port],)
-        self.serverProc = subprocess.Popen(stdout=subprocess.PIPE,
-                                stderr=subprocess.PIPE,
-                                *procArgs)
-        startTime = time.time()
-        timeout = startTime + 10 # Timeout after 10 seconds of waiting for server
-        try:
-            while True:
-                try:
-                    # This will time out after 10 seconds based on the socket settings
-                    server, address = self.manager_socket.accept()
-                except socket.timeout:
-                    self.shutdown_server()
-                    raise NukeManagerError("Server process failed to start properly.")
-                data = server.recv(bufsize)
-                if data:
-                    serverData = pickle.loads(data)
-                    server.close()
-                    if not serverData[0]:
-                        raise NukeServerError("Server could not find port to bind to.")
-                    self.server_port = serverData[1]
-                    break
-                if time.time() >= timeout:
-                    self.shutdown_server()
-                    raise NukeManagerError("Manager timed out waiting for server connection.")
-        except NukeConnectionError, e:
-            try:
-                self.shutdown_server()
-            except Exception:
-                pass
-            
-            self.nuke_stdout, self.nuke_stderr = self.serverProc.communicate()
-            e.nuke_sdout, e.nuke_stderr = self.nuke_stdout, self.nuke_stderr 
-            raise
-            
         self.manager_socket.close()
         try:
             self.client = NukeConnection(self.server_port)
@@ -367,6 +332,57 @@ class NukeCommandManager():
     def __exit__(self, type, value, traceback):
         self.client.shutdown_server()
         self.nuke_stdout, self.nuke_stderr = self.serverProc.communicate()
+
+    def start_server(self):
+        bufsize = 4096
+        # Make sure the port number has a trailing space... this is a bug in Nuke's
+        # Python argument parsing (logged with The Foundry as Bug 17918)
+        procArgs = ([NUKE_EXEC, '-t', '-m', '1', '--', inspect.getabsfile(self.__class__), '%d ' % self.manager_port],)
+        for i in xrange(self.license_retry_count+1):
+            self.serverProc = subprocess.Popen(stdout=subprocess.PIPE,
+                                               stderr=subprocess.PIPE,
+                                               *procArgs)
+            startTime = time.time()
+            timeout = startTime + 10 # Timeout after 10 seconds of waiting for server
+            try:
+                while True:
+                    try:
+                        # This will time out after 10 seconds based on the socket settings
+                        server, address = self.manager_socket.accept()
+                    except socket.timeout:
+                        retCode = self.serverProc.poll()
+                        if retCode == 100: # License failure.
+                            raise NukeLicenseError
+                        else: # Nuke is either still running or dead for other reasons.
+                            raise NukeManagerError("Server process failed to start properly.")
+                    data = server.recv(bufsize)
+                    if data:
+                        serverData = pickle.loads(data)
+                        server.close()
+                        if not serverData[0]:
+                            raise NukeServerError("Server could not find port to bind to.")
+                        self.server_port = serverData[1]
+                        break
+                    if time.time() >= timeout:
+                        raise NukeManagerError("Manager timed out waiting for server connection.")
+
+            except NukeConnectionError, e:
+                try:
+                    self.shutdown_server()
+                except Exception:
+                    pass
+
+                self.nuke_stdout, self.nuke_stderr = self.serverProc.communicate()
+                e.nuke_sdout, e.nuke_stderr = self.nuke_stdout, self.nuke_stderr 
+                raise
+
+            except NukeLicenseError:
+                print "License error. Retrying in %d seconds..." % self.license_retry_delay
+                time.sleep(self.license_retry_delay)
+            else:
+                return
+
+        raise NukeLicenseError("Maximum license retry count exceeded. Aborting.")
 
     def shutdown_server(self):
         '''
