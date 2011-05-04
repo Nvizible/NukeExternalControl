@@ -1,8 +1,7 @@
 '''
-This script defines the client-side classes for the Nuke command server interface.
+This module defines the client-side classes for the Nuke command server interface.
 
-It also functions as an executable for the purposes of launching NukeCommandManager
-instances.
+It also functions as an executable to launch NukeCommandManager instances.
 '''
 
 import inspect
@@ -12,31 +11,8 @@ import subprocess
 import sys
 import threading
 import time
-from os import devnull
 
-basicTypes = [int, float, complex, str, unicode, buffer, xrange, bool, type(None)]
-listTypes = [list, tuple, set, frozenset]
-dictTypes = [dict]
-
-# This constant should be set to whatever absolute or
-# relative call your system uses to launch Nuke (excluding
-# any flags or arguments).
-NUKE_EXEC = 'Nuke'
-
-MAX_SOCKET_BYTES = 2048
-
-class NukeLicenseError(StandardError):
-    pass
-
-class NukeConnectionError(StandardError):
-    pass
-
-class NukeManagerError(NukeConnectionError):
-    pass
-
-class NukeServerError(NukeConnectionError):
-    pass
-
+from nukeExternalControl.common import *
 
 class NukeConnection():
     '''
@@ -52,8 +28,8 @@ class NukeConnection():
         self._host = host
         self.is_active = False
         if not port:
-            start_port = 54200 + instance
-            end_port = 54300
+            start_port = DEFAULT_START_PORT + instance
+            end_port = DEFAULT_END_PORT
             self._port = self.find_connection_port(start_port, end_port)
             if self._port == -1:
                 raise NukeConnectionError("Connection with Nuke failed")
@@ -72,13 +48,11 @@ class NukeConnection():
         return -1
     
     def send(self, data):#
-        size = 4096
-        
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((self._host, self._port))
             s.send(data)
-            result = s.recv(size)
+            result = s.recv(SOCKET_BUFFER_SIZE)
             s.close()
         except socket.error:
             raise NukeConnectionError("Connection with Nuke failed")
@@ -272,8 +246,8 @@ class NukeCommandManager():
     available OS-assigned port.
 
     When the manager's __enter__ method is called, the server
-    subprocess is started. The manager then waits for the managed
-    server to call back with its status and bound port.
+    subprocess is started. The manager then waits for the server
+    to call back with its status and bound port.
 
     A NukeConnection instance is then started using the port number
     returned by the managed server's callback. This instance is
@@ -286,9 +260,6 @@ class NukeCommandManager():
     its companion server the 'shutdown' signal. This will cause the
     server to send back its shutdown message, close the connection to
     the client, and exit cleanly.
-
-    The __exit__ method then waits for the server thread to exit by
-    calling its '.join()' method.
     '''
     def __init__(self, license_retry_count=5, license_retry_delay=5):
         self.manager_port = -1
@@ -334,7 +305,6 @@ class NukeCommandManager():
         self.nuke_stdout, self.nuke_stderr = self.serverProc.communicate()
 
     def start_server(self):
-        bufsize = 4096
         # Make sure the port number has a trailing space... this is a bug in Nuke's
         # Python argument parsing (logged with The Foundry as Bug 17918)
         procArgs = ([NUKE_EXEC, '-t', '-m', '1', '--', inspect.getabsfile(self.__class__), '%d ' % self.manager_port],)
@@ -347,7 +317,7 @@ class NukeCommandManager():
             try:
                 while True:
                     try:
-                        # This will time out after 10 seconds based on the socket settings
+                        # Times out after 10 seconds based on the socket settings
                         server, address = self.manager_socket.accept()
                     except socket.timeout:
                         retCode = self.serverProc.poll()
@@ -355,7 +325,7 @@ class NukeCommandManager():
                             raise NukeLicenseError
                         else: # Nuke is either still running or dead for other reasons.
                             raise NukeManagerError("Server process failed to start properly.")
-                    data = server.recv(bufsize)
+                    data = server.recv(SOCKET_BUFFER_SIZE)
                     if data:
                         serverData = pickle.loads(data)
                         server.close()
@@ -390,13 +360,12 @@ class NukeCommandManager():
         client could not be initialized.
         Returns the server's shutdown message.
         '''
-        bufsize = 1024 * 1024
         packet = {'action':'shutdown', 'id':-1, 'parameters':None}
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             s.connect(('', self.server_port))
             s.send(pickle.dumps(packet))
-            result = s.recv(bufsize)
+            result = s.recv(SOCKET_BUFFER_SIZE)
             s.close()
             return pickle.loads(result)
         except socket.error:
@@ -410,8 +379,8 @@ def start_managed_nuke_server(manager_port=None):
     server instance that will communicate with a NukeCommandManager
     on the specified port. Must be called from within Nuke.
     '''
-    import nukeCommandServer
-    nukeCommandServer.NukeManagedServer(manager_port=manager_port)
+    import nukeExternalControl.server as comServer
+    comServer.NukeManagedServer(manager_port=manager_port)
 
 
 if __name__ == '__main__':

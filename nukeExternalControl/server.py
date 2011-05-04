@@ -1,5 +1,5 @@
 '''
-This script defines the server-side classes for the Nuke command server interface.
+This module defines the server-side classes for the Nuke command server interface.
 
 It can also be passed as an executable to automatically start server instances.
 '''
@@ -10,14 +10,7 @@ import threading
 import imp
 import nuke
 
-basicTypes = [int, float, complex, str, unicode, buffer, xrange, bool, type(None)]
-listTypes = [list, tuple, set, frozenset]
-dictTypes = [dict]
-
-MAX_SOCKET_BYTES = 2048
-
-class NukeConnectionError(StandardError):
-    pass
+from nukeExternalControl.common import *
 
 def nuke_command_server():
     t = threading.Thread(None, NukeInternal)
@@ -30,13 +23,12 @@ class NukeInternal:
         self._next_object_id = 0
         self.port = port
         self.bound_port = False
-        self.buffer_size = 4096
         
         host = ''
         backlog = 5
         if not self.port:
-			start_port = 54200
-			end_port = 54300
+			start_port = DEFAULT_START_PORT
+			end_port = DEFAULT_END_PORT
         else:
             start_port = end_port = self.port
         
@@ -64,7 +56,7 @@ class NukeInternal:
         while 1:
             client, address = sock.accept()
             try:
-				data = client.recv(self.buffer_size)
+				data = client.recv(SOCKET_BUFFER_SIZE)
 				if data:
 					result = self.receive(data)
 					client.send(result)
@@ -239,6 +231,7 @@ class NukeManagedServer(NukeInternal):
         manager.close()
         if not status:
             raise NukeConnectionError("Cannot find port to bind to")
+
 
 if __name__ == '__main__':
     NukeInternal()
