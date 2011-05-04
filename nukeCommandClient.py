@@ -23,7 +23,7 @@ dictTypes = [dict]
 # any flags or arguments).
 NUKE_EXEC = 'Nuke'
 
-MAX_SOCKET_BYTES = 16384
+MAX_SOCKET_BYTES = 2048
 
 class NukeLicenseError(StandardError):
     pass
@@ -72,7 +72,7 @@ class NukeConnection():
         return -1
     
     def send(self, data):#
-        size = 1024 * 1024
+        size = 4096
         
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

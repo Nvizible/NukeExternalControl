@@ -1,3 +1,9 @@
+'''
+This script defines the server-side classes for the Nuke command server interface.
+
+It can also be passed as an executable to automatically start server instances.
+'''
+
 import pickle
 import socket
 import threading
@@ -8,7 +14,7 @@ basicTypes = [int, float, complex, str, unicode, buffer, xrange, bool, type(None
 listTypes = [list, tuple, set, frozenset]
 dictTypes = [dict]
 
-MAX_SOCKET_BYTES = 16384
+MAX_SOCKET_BYTES = 2048
 
 class NukeConnectionError(StandardError):
     pass
@@ -24,7 +30,7 @@ class NukeInternal:
         self._next_object_id = 0
         self.port = port
         self.bound_port = False
-        self.buffer_size = 1024 * 1024
+        self.buffer_size = 4096
         
         host = ''
         backlog = 5
@@ -233,3 +239,6 @@ class NukeManagedServer(NukeInternal):
         manager.close()
         if not status:
             raise NukeConnectionError("Cannot find port to bind to")
+
+if __name__ == '__main__':
+    NukeInternal()
