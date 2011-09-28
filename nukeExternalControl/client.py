@@ -11,6 +11,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 
 from nukeExternalControl.common import *
 
@@ -39,14 +40,14 @@ class NukeConnection():
             if not self.test_connection():
                 raise NukeConnectionError("Could not connect to Nuke command server on port %d" % self._port)
             self.is_active = True
-    
+
     def find_connection_port(self, start_port, end_port):
         for port in range(start_port, end_port + 1):
             self._port = port
             if self.test_connection():
                 return port
         return -1
-    
+
     def send(self, data):#
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -56,27 +57,27 @@ class NukeConnection():
             s.close()
         except socket.error:
             raise NukeConnectionError("Connection with Nuke failed")
-            
+
         return result
-    
+
     def test_connection(self):
         try:
             self.get("test")
             return True
         except NukeConnectionError, e:
             return False
-    
+
     def get(self, item_type, item_id = -1, parameters = None):
         try:
             data = {'action': item_type, 'id': item_id, 'parameters': parameters}
             encoded = pickle.dumps(self.encode(data))
-            
+
             if len(encoded) > MAX_SOCKET_BYTES:
                 encodedBits = []
                 while encoded:
                     encodedBits.append(encoded[:MAX_SOCKET_BYTES])
                     encoded = encoded[MAX_SOCKET_BYTES:]
-                
+
                 for i in range(len(encodedBits)):
                     result = pickle.loads(self.send(pickle.dumps({'type': "NukeTransferPartialObject", 'part': i, 'part_count': len(encodedBits), 'data': encodedBits[i]})))
                     if i < (len(encodedBits) - 1):
@@ -93,16 +94,16 @@ class NukeConnection():
                     result = pickle.loads(returnData)
                     data += result['data']
                     nextPart += 1
-                
+
                 result = pickle.loads(data)
         except Exception, e:
             raise e
-        
+
         if isinstance(result, Exception):
             raise result
-        
+
         return result
-    
+
     def shutdown_server(self):
         '''
         Passes the 'shutdown' keyword to the server.
@@ -119,31 +120,31 @@ class NukeConnection():
 
     def get_object_attribute(self, obj_id, property_name):
         return self.decode(self.get("getattr", obj_id, property_name))
-    
+
     def set_object_attribute(self, obj_id, property_name, value):
         return self.decode(self.get("setattr", obj_id, (property_name, value)))
-    
+
     def get_object_item(self, obj_id, property_name):
         return self.decode(self.get("getitem", obj_id, property_name))
-    
+
     def set_object_item(self, obj_id, property_name, value):
         return self.decode(self.get("setitem", obj_id, (property_name, value)))
-    
+
     def call_object_function(self, obj_id, parameters):
         return self.decode(self.get("call", obj_id, parameters))
-    
+
     def get_object_length(self, obj_id):
         return self.decode(self.get("len", obj_id))
-    
+
     def get_object_string(self, obj_id):
         return self.decode(self.get("str", obj_id))
-    
+
     def get_object_repr(self, obj_id):
         return self.decode(self.get("repr", obj_id))
-    
+
     def import_module(self, module_name):
         return self.decode(self.get("import", parameters = module_name))
-    
+
     def recode_data(self, data, recode_object_func):
         if type(data) in basicTypes:
             return data
@@ -162,28 +163,28 @@ class NukeConnection():
                 return newDict
         else:
             return recode_object_func(data)
-            
+
     def encode_data(self, data):
         return self.recode_data(data, self.encode_data_object)
-    
+
     def decode_data(self, data):
         return self.recode_data(data, self.decode_data_object)
-    
+
     def encode_data_object(self, data):
         if isinstance(data, NukeObject):
             return {'type': "NukeTransferObject", 'id': data._id}
         else:
             raise TypeError("Invalid object type being passed through connection: '%s'" % data)
-    
+
     def decode_data_object(self, data):
         return NukeObject(self, data['id'])
-    
+
     def encode(self, data):
         return self.encode_data(data)
-    
+
     def decode(self, data):
         return self.decode_data(data)
-    
+
     def __getattr__(self, attrname):
         return self.get_object_item(-1, attrname)
 
@@ -192,7 +193,7 @@ class NukeConnection():
 
     def __repr__(self):
         return object.__repr__(self).replace("instance object", "NukeConnection instance")
-    
+
     def __str__(self):
         return self.__repr__()
 
@@ -200,31 +201,31 @@ class NukeObject():
     def __init__(self, connection, id):
         self.__dict__['_id'] = id
         self.__dict__['_connection'] = connection
-    
+
     def __getattr__(self, attrname):
         if attrname[0] == "_":
             return self.__dict__[attrname]
         else:
             return self._connection.get_object_attribute(self._id, attrname)
-        
+
     def __setattr__(self, attrname, value):
         return self._connection.set_object_attribute(self._id, attrname, value)
-        
+
     def __getitem__(self, itemname):
         return self._connection.get_object_item(self._id, itemname)
-    
+
     def __setitem__(self, itemname, value):
         return self._connection.set_object_item(self._id, itemname, value)
-    
+
     def __call__(self, *args, **kwargs):
         return self._connection.call_object_function(self._id, {'args': args, 'kwargs': kwargs})
-    
+
     def __len__(self):
         return self._connection.get_object_length(self._id)
-    
+
     def __str__(self):
         return self._connection.get_object_string(self._id)
-    
+
     def __repr__(self):
         return self._connection.get_object_repr(self._id)
 
@@ -273,7 +274,7 @@ class NukeCommandManager():
         bound_port = False
 
         manager = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        manager.settimeout(10.0)
+        manager.settimeout(15.0)
         manager.bind(('', 0))
         bound_port = True
         self.manager_port = manager.getsockname()[1]
@@ -288,7 +289,7 @@ class NukeCommandManager():
         backlog = 5
         self.manager_socket.listen(backlog)
 
-        # Start the server process and wait for it to call back to the 
+        # Start the server process and wait for it to call back to the
         # manager with its success status and bound port
         self.start_server()
 
@@ -302,28 +303,37 @@ class NukeCommandManager():
 
     def __exit__(self, type, value, traceback):
         self.client.shutdown_server()
-        self.nuke_stdout, self.nuke_stderr = self.serverProc.communicate()
+        self.nuke_stdout, self.nuke_stderr = self.server_proc.communicate()
 
     def start_server(self):
         # Make sure the port number has a trailing space... this is a bug in Nuke's
         # Python argument parsing (logged with The Foundry as Bug 17918)
         procArgs = ([NUKE_EXEC, '-t', '-m', '1', '--', inspect.getabsfile(self.__class__), '%d ' % self.manager_port],)
         for i in xrange(self.license_retry_count+1):
-            self.serverProc = subprocess.Popen(stdout=subprocess.PIPE,
+            self.server_proc = subprocess.Popen(stdout=subprocess.PIPE,
                                                stderr=subprocess.PIPE,
                                                *procArgs)
             startTime = time.time()
-            timeout = startTime + 10 # Timeout after 10 seconds of waiting for server
+            timeout = startTime + 15 # Timeout after 10 seconds of waiting for server
             try:
                 while True:
                     try:
-                        # Times out after 10 seconds based on the socket settings
+                        # Times out after 15 seconds based on the socket settings
                         server, address = self.manager_socket.accept()
                     except socket.timeout:
-                        retCode = self.serverProc.poll()
-                        if retCode == 100: # License failure.
-                            raise NukeLicenseError
-                        else: # Nuke is either still running or dead for other reasons.
+                        retCode = self.server_proc.poll()
+                        if retCode:
+                            if retCode == 100: # License failure.
+                                raise NukeLicenseError
+                            else: # Nuke died with another return code
+                                print "Nuke process died with an unexpected return code"
+                                raise NukeManagerError("Server process failed to start. Nuke exited with code %s." % retCode)
+                        elif retCode is None:
+                            # Nuke is still running
+                            print "Nuke process is still alive but hasn't responded to the Manager yet (timed out)."
+                            raise nukeManagerError("Nuke process hasn't exited, but hasn't responded to the Manager either.")
+                        else: # Nuke exited cleanly (0) for some reason
+                            print "Nuke exited with code 0 (server script failed to start running)"
                             raise NukeManagerError("Server process failed to start properly.")
                     data = server.recv(SOCKET_BUFFER_SIZE)
                     if data:
@@ -337,13 +347,23 @@ class NukeCommandManager():
                         raise NukeManagerError("Manager timed out waiting for server connection.")
 
             except NukeConnectionError, e:
+                traceback.print_exc()
                 try:
                     self.shutdown_server()
-                except Exception:
-                    pass
+                except NukeServerError, se:
+                    self.nuke_stdout = self.nuke_stderr = ""
+                    print "Error in emergency Nuke shutdown:"
+                    print se
+                else:
+                    retCode = self.server_proc.poll()
+                    if retCode is not None:
+                        self.nuke_stdout, self.nuke_stderr = self.server_proc.communicate()
+                    else:
+                        print "Issuing shell kill on stalled process"
+                        #FIXME: Kill is not cross-platform
+                        subprocess.call(["kill", "-9", self.server_proc.pid])
 
-                self.nuke_stdout, self.nuke_stderr = self.serverProc.communicate()
-                e.nuke_sdout, e.nuke_stderr = self.nuke_stdout, self.nuke_stderr 
+                e.nuke_sdout, e.nuke_stderr = self.nuke_stdout, self.nuke_stderr
                 raise
 
             except NukeLicenseError:
