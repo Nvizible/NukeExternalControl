@@ -4,6 +4,7 @@ This module defines the client-side classes for the Nuke command server interfac
 It also functions as an executable to launch NukeCommandManager instances.
 '''
 
+import os
 import inspect
 import pickle
 import socket
@@ -14,6 +15,14 @@ import time
 import traceback
 
 from nukeExternalControl.common import *
+
+try:
+    THIS_FILE = inspect.getabsfile(lambda:0)
+except TypeError:
+    this_mod = __import__(__name__, {}, {}, [])
+    THIS_FILE = getattr(this_mod, '__file__', None)
+    if THIS_FILE:
+        THIS_FILE = os.path.abspath(THIS_FILE)
 
 class NukeConnection():
     '''
@@ -306,9 +315,12 @@ class NukeCommandManager():
         self.nuke_stdout, self.nuke_stderr = self.server_proc.communicate()
 
     def start_server(self):
+        if not THIS_FILE:
+            raise RuntimeError("could not determine absolute path to %s module" % globals()['__name__'])
+    
         # Make sure the port number has a trailing space... this is a bug in Nuke's
         # Python argument parsing (logged with The Foundry as Bug 17918)
-        procArgs = ([NUKE_EXEC, '-t', '-m', '1', '--', inspect.getabsfile(self.__class__), '%d ' % self.manager_port],)
+        procArgs = ([NUKE_EXEC, '-t', '-m', '1', '--', THIS_FILE, '%d ' % self.manager_port],)
         for i in xrange(self.license_retry_count+1):
             self.server_proc = subprocess.Popen(stdout=subprocess.PIPE,
                                                stderr=subprocess.PIPE,
