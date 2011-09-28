@@ -271,7 +271,7 @@ class NukeCommandManager():
     server to send back its shutdown message, close the connection to
     the client, and exit cleanly.
     '''
-    def __init__(self, license_retry_count=5, license_retry_delay=5):
+    def __init__(self, license_retry_count=5, license_retry_delay=5, extra_nuke_args=()):
         self.manager_port = -1
         self.manager_socket = None
         self.server_port = -1
@@ -291,6 +291,7 @@ class NukeCommandManager():
 
         if (not bound_port) or (self.manager_port == -1):
             raise NukeManagerError("MANAGER: Cannot find port to bind to")
+        self.extra_nuke_args = extra_nuke_args
 
     def __enter__(self):
         if not self.manager_socket:
@@ -320,7 +321,7 @@ class NukeCommandManager():
     
         # Make sure the port number has a trailing space... this is a bug in Nuke's
         # Python argument parsing (logged with The Foundry as Bug 17918)
-        procArgs = ([NUKE_EXEC, '-t', '-m', '1', '--', THIS_FILE, '%d ' % self.manager_port],)
+        procArgs = ([NUKE_EXEC, '-t', '-m', '1'] + list(self.extra_nuke_args) + ['--', THIS_FILE, '%d ' % self.manager_port],)
         for i in xrange(self.license_retry_count+1):
             self.server_proc = subprocess.Popen(stdout=subprocess.PIPE,
                                                stderr=subprocess.PIPE,
