@@ -120,7 +120,11 @@ class NukeInternal:
                  host in ["localhost", os.getenv("HOST")]):
             return True
         
-        return nuke.executeInMainThreadWithResult(nuke.ask, ("Something is trying to connect to Nuke from %s.\nDo you wish to allow this?" % host,))
+        # If Nuke isn't running in GUI mode, then allow the connection to verify
+        if nuke.GUI:
+            return nuke.executeInMainThreadWithResult(nuke.ask, ("Something is trying to connect to Nuke from %s.\nDo you wish to allow this?" % host,))
+        
+        return True
         
     def get(self, data):
         obj = self.get_object(data['id'])
@@ -224,7 +228,7 @@ class NukeManagedServer(NukeInternal):
     def __init__(self, port=None, manager_port=None, manager_host='localhost'):
         self.manager_port = manager_port
         self.manager_host = manager_host
-        NukeInternal.__init__(self, port)
+        NukeInternal.__init__(self, port, VERIFY_CONNECTION_NONE)
 
     def start_server(self, socket):
         '''
