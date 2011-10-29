@@ -10,18 +10,23 @@ dictTypes = [dict]
 
 MAX_SOCKET_BYTES = 16384
 
+VERIFY_CONNECTION_NONE = 0
+VERIFY_CONNECTION_ALWAYS = 1
+VERIFY_CONNECTION_ONLY_REMOTE = 2
+
 class NukeConnectionError(StandardError):
     pass
 
-def nuke_command_server():
-    t = threading.Thread(None, NukeInternal)
+def nuke_command_server(verifyConnection = VERIFY_CONNECTION_NONE):
+    t = threading.Thread(None, NukeInternal, args = (verifyConnection,))
     t.setDaemon(True)
     t.start()
     
 class NukeInternal:
-    def __init__(self):
+    def __init__(self, verifyConnection = VERIFY_CONNECTION_NONE):
         self._objects = {}
         self._next_object_id = 0
+        self._verify_connection = verifyConnection
         
         host = ''
         start_port = 54200
@@ -92,12 +97,27 @@ class NukeInternal:
     def decode(self, data):
         return self.decode_data(pickle.loads(data))
 
+    def verify_connection(self, host):
+        if self._verify_connection == VERIFY_CONNECTION_NONE or \
+                (self._verify_connection == VERIFY_CONNECTION_ONLY_REMOTE and \
+                 host in ["localhost", os.getenv("HOST")]):
+            return True
+        
+        return nuke.executeInMainThreadWithResult(nuke.ask, ("Something is trying to connect to Nuke from %s.\nDo you wish to allow this?" % host,))
+        
     def get(self, data):
         obj = self.get_object(data['id'])
         params = data['parameters']
         result = None
         try:
-            if data['action'] == "getattr":
+            if data['action'] == "initiate":
+                if self.verify_connection(params):
+                    result = "accept"
+                else:
+                    result = "deny"
+            elif data['action'] == "test":
+                result = True
+            elif data['action'] == "getattr":
                 result = getattr(obj, params)
             elif data['action'] == "setattr":
                 setattr(obj, params[0], params[1])

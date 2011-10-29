@@ -21,12 +21,17 @@ class NukeConnection():
         
         if self._port == -1:
             raise NukeConnectionError("Connection with Nuke failed")
+        elif self._port == -2:
+            raise NukeConnectionError("Connection with Nuke denied")
     
     def find_connection_port(self, start_port, end_port):
         for port in range(start_port, end_port + 1):
             self._port = port
-            if self.test_connection():
-                return port
+            if self.test_connection() is True:
+                if self.authenticate_connection() is True:
+                    return port
+                else:
+                    return -2
         return -1
     
     def send(self, data):#
@@ -43,10 +48,19 @@ class NukeConnection():
             
         return result
     
+    def authenticate_connection(self):
+        if self._host == "localhost":
+            host = "localhost"
+        else:
+            host = os.getenv("HOST")
+        
+        if self.get("initiate", parameters = host) == "accept":
+            return True
+        return False
+    
     def test_connection(self):
         try:
-            self.get("test")
-            return True
+            return self.get("test")
         except NukeConnectionError, e:
             return False
     
