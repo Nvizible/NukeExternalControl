@@ -200,6 +200,12 @@ class NukeInternal:
                 result = str(obj)
             elif action == "repr":
                 result = `obj`
+            elif data['action'] == "del":
+                del obj
+            elif data['action'] == "isinstance":
+                result = isinstance(obj, params)
+            elif data['action'] == "issubclass":
+                result = issubclass(params, obj)
             elif action == "import":
                 result = imp.load_module(params, *imp.find_module(params))
             elif action == "shutdown":

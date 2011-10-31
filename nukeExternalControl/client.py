@@ -216,6 +216,15 @@ class NukeConnection():
         '''
         return self.decode(self.get("repr", obj_id))
     
+    def delete_object(self, obj_id):
+        return self.decode(self.get("del", obj_id))
+    
+    def get_object_isinstance(self, obj_id, instance):
+        return self.decode(self.get("isinstance", obj_id, instance))
+    
+    def get_object_issubclass(self, obj_id, subclass):
+        return self.decode(self.get("issubclass", obj_id, subclass))
+    
     def import_module(self, module_name):
         '''
         Import a module on the server
@@ -397,6 +406,35 @@ class NukeObject():
         '''
         return self._connection.get_object_repr(self._id)
 
+    def __del__(self):
+        '''
+        Delete an object
+        
+        del object
+        '''
+        return self._connection.delete_object(self._id)
+       
+    #def __instancecheck__(self, cls):
+    #    '''
+    #    Check whether the object is an instance of a specific class
+    #    
+    #    result = isinstance(object, cls)
+    #    '''
+    #    print "Checking isinstance"
+    #    print self._id
+    #    return self._connection.get_object_isinstance(self._id, cls)
+    #
+    #def __instancechecksafe__(self, instance):
+    #    return object.__instancecheck__(self, instance)
+    
+    def __subclasscheck__(self, subclass):
+        '''
+        Check whether the object is an subclass of a specific class
+        
+        result = isinstance(object, cls)
+        '''
+        return self._connection.get_object_issubclass(self._id, subclass)
+
 
 class NukeCommandManager():
     '''
@@ -573,7 +611,6 @@ def start_managed_nuke_server(manager_port=None):
     '''
     import nukeExternalControl.server as comServer
     comServer.NukeManagedServer(manager_port=manager_port)
-
 
 if __name__ == '__main__':
     manager_port = None
