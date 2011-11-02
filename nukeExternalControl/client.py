@@ -24,7 +24,7 @@ except TypeError:
     if THIS_FILE:
         THIS_FILE = os.path.abspath(THIS_FILE)
 
-class NukeConnection():
+class NukeConnection(object):
     '''
     If 'port' is specified, the client will attempt to connect
     to a command server on that port, raising an exception
@@ -325,7 +325,7 @@ class NukeConnection():
         '''
         return self.__repr__()
 
-class NukeObject():
+class NukeObject(object):
     '''
     The class that is used on the client to represent objects on the server
     inside Nuke.
@@ -436,7 +436,7 @@ class NukeObject():
         return self._connection.get_object_issubclass(self._id, subclass)
 
 
-class NukeCommandManager():
+class NukeCommandManager(object):
     '''
     This class internally manages a Nuke command client-server pair.
     It is designed to be instantiated as the 'as' assignment in a

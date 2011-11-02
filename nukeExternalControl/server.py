@@ -24,7 +24,7 @@ def nuke_command_server(verifyConnection = VERIFY_CONNECTION_NONE):
     t.setDaemon(True)
     t.start()
     
-class NukeInternal:
+class NukeInternal(object):
     '''
     A class that runs inside of Nuke, and allows actions to be requested
     over a socket connection to a client.
