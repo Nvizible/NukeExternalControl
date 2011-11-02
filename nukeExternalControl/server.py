@@ -203,7 +203,7 @@ class NukeInternal(object):
             elif data['action'] == "del":
                 del obj
             elif data['action'] == "isinstance":
-                result = isinstance(obj, params)
+                result = obj.__instancecheck__(params)
             elif data['action'] == "issubclass":
                 result = issubclass(params, obj)
             elif action == "import":

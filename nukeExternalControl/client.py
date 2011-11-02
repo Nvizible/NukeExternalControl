@@ -414,18 +414,13 @@ class NukeObject(object):
         '''
         return self._connection.delete_object(self._id)
        
-    #def __instancecheck__(self, cls):
-    #    '''
-    #    Check whether the object is an instance of a specific class
-    #    
-    #    result = isinstance(object, cls)
-    #    '''
-    #    print "Checking isinstance"
-    #    print self._id
-    #    return self._connection.get_object_isinstance(self._id, cls)
-    #
-    #def __instancechecksafe__(self, instance):
-    #    return object.__instancecheck__(self, instance)
+    def __instancecheck__(cls, inst):
+        '''
+        Check whether the object is an instance of a specific class
+        
+        result = isinstance(inst, cls)
+        '''
+        return cls._connection.get_object_isinstance(cls._id, inst)
     
     def __subclasscheck__(self, subclass):
         '''
