@@ -345,7 +345,7 @@ class NukeObject(object):
 
         result = object.attrname
         '''
-        if attrname[0] == "_":
+        if attrname in self.__dict__:
             return self.__dict__[attrname]
         else:
             return self._connection.get_object_attribute(self._id, attrname)
