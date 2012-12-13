@@ -3,27 +3,29 @@ This module defines the server-side classes for the Nuke command server interfac
 
 It can also be passed as an executable to automatically start server instances.
 '''
-
+import imp
 import pickle
 import socket
 import threading
-import imp
+
 import nuke
 
 from nukeExternalControl.common import *
+
 
 def nuke_command_server():
     t = threading.Thread(None, NukeInternal)
     t.setDaemon(True)
     t.start()
-    
+
+
 class NukeInternal:
     def __init__(self, port=None):
         self._objects = {}
         self._next_object_id = 0
         self.port = port
         self.bound_port = False
-        
+
         host = ''
         backlog = 5
         if not self.port:
@@ -31,7 +33,7 @@ class NukeInternal:
 			end_port = DEFAULT_END_PORT
         else:
             start_port = end_port = self.port
-        
+
         for port in xrange(start_port, end_port + 1):
             try:
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -42,13 +44,13 @@ class NukeInternal:
                 break
             except Exception, e:
                 pass
-        
+
         if not self.bound_port:
             raise NukeConnectionError("Cannot find port to bind to")
-            
+
         s.listen(backlog)
         self.start_server(s)
-        
+
     def start_server(self, sock):
         '''
         Starts the main server loop
@@ -66,7 +68,7 @@ class NukeInternal:
                 raise
             finally:
 				client.close()
-    
+
     def recode_data(self, data, recode_object_func):
         if type(data) in basicTypes or isinstance(data, Exception):
             return data
@@ -88,7 +90,7 @@ class NukeInternal:
 
     def encode_data(self, data):
         return self.recode_data(data, self.encode_data_object)
-    
+
     def decode_data(self, data):
         return self.recode_data(data, self.decode_data_object)
 
@@ -97,7 +99,7 @@ class NukeInternal:
         self._next_object_id += 1
         self._objects[this_object_id] = data
         return {'type': "NukeTransferObject", 'id': this_object_id}
-    
+
     def decode_data_object(self, data):
         object_id = data['id']
         return self._objects[object_id]
@@ -105,7 +107,7 @@ class NukeInternal:
     def encode(self, data):
         encoded_data = self.encode_data(data)
         return pickle.dumps(encoded_data)
-    
+
     def decode(self, data):
         return self.decode_data(pickle.loads(data))
 
@@ -141,47 +143,47 @@ class NukeInternal:
                 raise SystemExit
         except Exception, e:
             result = e
-        
+
         return result
-    
+
     def receive(self, data_string):
         data = self.decode(data_string)
-        
+
         if isinstance(data, dict) and 'type' in data and data['type'] == "NukeTransferPartialObjectRequest":
             if data['part'] in self.partialObjects:
                 encoded = self.partialObjects[data['part']]
                 del self.partialObjects[data['part']]
                 return encoded
-        
+
         if isinstance(data, dict) and 'type' in data and data['type'] == "NukeTransferPartialObject":
             if data['part'] == 0:
                 self.partialData = ""
             self.partialData += data['data']
-            
+
             if data['part'] == (data['part_count'] - 1):
                 data = pickle.loads(self.partialData)
             else:
                 nextPart = data['part'] + 1
                 return pickle.dumps({'type': "NukeTransferPartialObjectRequest", 'part': nextPart})
-            
+
         encoded = self.encode(self.get(data))
-        
+
         if len(encoded) > MAX_SOCKET_BYTES:
             encodedBits = []
             while encoded:
                 encodedBits.append(encoded[:MAX_SOCKET_BYTES])
                 encoded = encoded[MAX_SOCKET_BYTES:]
-            
+
             self.partialObjects = {}
             for i in range(len(encodedBits)):
                 self.partialObjects[i] = pickle.dumps({'type': "NukeTransferPartialObject", 'part': i, 'part_count': len(encodedBits), 'data': encodedBits[i]})
-            
+
             encoded = self.partialObjects[0]
             del self.partialObjects[0]
 
         return encoded
 
-        
+
     def get_object(self, id):
         if id == -1:
             return globals()

@@ -15,6 +15,7 @@ basicTypes = [int, float, complex, str, unicode, buffer, xrange, bool, type(None
 listTypes = [list, tuple, set, frozenset]
 dictTypes = [dict]
 
+
 class NukeLicenseError(StandardError):
     pass
 
