@@ -273,7 +273,7 @@ class NukeCommandManager():
         bound_port = False
 
         manager = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        manager.settimeout(10.0)
+        manager.settimeout(15.0)
         manager.bind(('', 0))
         bound_port = True
         self.manager_port = manager.getsockname()[1]
@@ -302,28 +302,38 @@ class NukeCommandManager():
 
     def __exit__(self, type, value, traceback):
         self.client.shutdown_server()
-        self.nuke_stdout, self.nuke_stderr = self.serverProc.communicate()
+        self.nuke_stdout, self.nuke_stderr = self.server_proc.communicate()
 
     def start_server(self):
         # Make sure the port number has a trailing space... this is a bug in Nuke's
         # Python argument parsing (logged with The Foundry as Bug 17918)
         procArgs = ([NUKE_EXEC, '-t', '-m', '1', '--', inspect.getabsfile(self.__class__), '%d ' % self.manager_port],)
-        for i in xrange(self.license_retry_count+1):
-            self.serverProc = subprocess.Popen(stdout=subprocess.PIPE,
+        for i in xrange(self.license_retry_count + 1):
+            self.server_proc = subprocess.Popen(stdout=subprocess.PIPE,
                                                stderr=subprocess.PIPE,
                                                *procArgs)
             startTime = time.time()
-            timeout = startTime + 10 # Timeout after 10 seconds of waiting for server
+            timeout = startTime + 15 # Timeout after 15 seconds of waiting for server
             try:
                 while True:
                     try:
-                        # Times out after 10 seconds based on the socket settings
+                        # Times out after 15 seconds based on the socket settings
                         server, address = self.manager_socket.accept()
                     except socket.timeout:
-                        retCode = self.serverProc.poll()
-                        if retCode == 100: # License failure.
-                            raise NukeLicenseError
-                        else: # Nuke is either still running or dead for other reasons.
+                        retCode = self.server_proc.poll()
+                        if retCode:
+                            if retCode == 100: # License failure.
+                                raise NukeLicenseError
+                            else: # Nuke died with another return code
+                                print "Nuke process died with an unexpected return code"
+                                raise NukeManagerError("Server process failed to start. Nuke exited with code %s." % retCode)
+                        elif retCode is None:
+                            # Nuke is still running
+                            print "Nuke process is still alive but hasn't responded to the Manager yet (timed out)."
+                            raise nukeManagerError("Nuke process hasn't exited, but hasn't responded to the Manager either.")
+                        else:
+                            # Nuke exited cleanly (0) for some reason
+                            print "Nuke exited with code 0 (server script failed to start running)"
                             raise NukeManagerError("Server process failed to start properly.")
                     data = server.recv(SOCKET_BUFFER_SIZE)
                     if data:
@@ -337,13 +347,24 @@ class NukeCommandManager():
                         raise NukeManagerError("Manager timed out waiting for server connection.")
 
             except NukeConnectionError, e:
+                import traceback
+                traceback.print_exc()
                 try:
                     self.shutdown_server()
-                except Exception:
-                    pass
+                except NukeServerError, se:
+                    self.nuke_stdout = self.nuke_stderr = ""
+                    print "Error in emergency Nuke shutdown:"
+                    print se
+                else:
+                    retCode = self.server_proc.poll()
+                    if retCode is not None:
+                        self.nuke_stdout, self.nuke_stderr = self.server_proc.communicate()
+                    else:
+                        print "Issuing shell kill on stalled process"
+                        #FIXME: Kill is not cross-platform
+                        subprocess.call(["kill", "-9", self.server_proc.pid])
 
-                self.nuke_stdout, self.nuke_stderr = self.serverProc.communicate()
-                e.nuke_sdout, e.nuke_stderr = self.nuke_stdout, self.nuke_stderr 
+                e.nuke_sdout, e.nuke_stderr = self.nuke_stdout, self.nuke_stderr
                 raise
 
             except NukeLicenseError:
