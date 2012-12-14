@@ -22,22 +22,27 @@ class NukeConnection():
 
     Otherwise, the standard port search routine runs.
     '''
-    def __init__(self, port=None, host="localhost", instance=0):
+    def __init__(self, port=None, start_port=None, end_port=None, host="localhost", instance=0):
         self._objects = {}
         self._functions = {}
         self._host = host
         self.is_active = False
-        if not port:
-            start_port = DEFAULT_START_PORT + instance
-            end_port = DEFAULT_END_PORT
-            self._port = self.find_connection_port(start_port, end_port)
-            if self._port == -1:
-                raise NukeConnectionError("Connection with Nuke failed")
-            self.is_active = True
-        else:
+        if port:
             self._port = port
             if not self.test_connection():
                 raise NukeConnectionError("Could not connect to Nuke command server on port %d" % self._port)
+            self.is_active = True
+        else:
+            if not start_port:
+                start_port = DEFAULT_START_PORT + instance
+            if end_port:
+                if end_port < start_port:
+                    raise ValueError("End port in search range is less than start port")
+            else:
+                end_port = DEFAULT_END_PORT
+            self._port = self.find_connection_port(start_port, end_port)
+            if self._port == -1:
+                raise NukeConnectionError("Connection with Nuke failed")
             self.is_active = True
 
     def find_connection_port(self, start_port, end_port):

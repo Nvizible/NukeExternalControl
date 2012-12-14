@@ -13,37 +13,39 @@ import nuke
 from nukeExternalControl.common import *
 
 
-def nuke_command_server():
-    t = threading.Thread(None, NukeInternal)
+def nuke_command_server(start_port=None, end_port=None):
+    t = threading.Thread(None, NukeInternal, kwargs={'start_port': start_port,
+                                                     'end_port': end_port})
     t.setDaemon(True)
     t.start()
 
 
 class NukeInternal:
-    def __init__(self, port=None):
+    def __init__(self, port=None, start_port=None, end_port=None):
         self._objects = {}
         self._next_object_id = 0
-        self.port = port
         self.bound_port = False
 
         host = ''
         backlog = 5
-        if not self.port:
-			start_port = DEFAULT_START_PORT
-			end_port = DEFAULT_END_PORT
-        else:
-            start_port = end_port = self.port
+        if port:
+            start_port = end_port = port
+        elif not (start_port and end_port):
+            start_port = DEFAULT_START_PORT
+            end_port = DEFAULT_END_PORT
 
         for port in xrange(start_port, end_port + 1):
+            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             try:
-                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                print "SERVER: Checking port %d" % port
                 s.bind((host, port))
+            except socket.error as err:
+                # Don't error if socket is already in use
+                if err.errno != 98:
+                    raise
+            else:
                 self.bound_port = True
                 self.port = port
                 break
-            except Exception, e:
-                pass
 
         if not self.bound_port:
             raise NukeConnectionError("Cannot find port to bind to")
