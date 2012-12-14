@@ -11,9 +11,10 @@ import subprocess
 import sys
 import threading
 import time
-import traceback
+
 
 from nukeExternalControl.common import *
+
 
 try:
     THIS_FILE = inspect.getabsfile(lambda:0)
@@ -22,6 +23,7 @@ except TypeError:
     THIS_FILE = getattr(this_mod, '__file__', None)
     if THIS_FILE:
         THIS_FILE = os.path.abspath(THIS_FILE)
+
 
 class NukeConnection():
     '''
