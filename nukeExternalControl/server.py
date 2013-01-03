@@ -12,18 +12,34 @@ import nuke
 
 from nukeExternalControl.common import *
 
+VERIFY_CONNECTION_NONE = 0
+VERIFY_CONNECTION_ALWAYS = 1
+VERIFY_CONNECTION_ONLY_REMOTE = 2
 
-def nuke_command_server(start_port=None, end_port=None):
+
+def nuke_command_server(start_port=None, end_port=None, verifyConnection=VERIFY_CONNECTION_NONE):
+    '''
+    Launch the command server in a separate thread
+    '''
     t = threading.Thread(None, NukeInternal, kwargs={'start_port': start_port,
-                                                     'end_port': end_port})
+                                                     'end_port': end_port,
+                                                     'verifyConnection': verifyConnection})
     t.setDaemon(True)
     t.start()
 
 
-class NukeInternal:
-    def __init__(self, port=None, start_port=None, end_port=None):
+class NukeInternal(object):
+    '''
+    A class that runs inside of Nuke, and allows actions to be requested
+    over a socket connection to a client.
+    It deals with keeping track of any objects that cannot be passed over
+    the socket and ensures that the client side feels as similar to running
+    the code inside Nuke as possible.
+    '''
+    def __init__(self, port=None, start_port=None, end_port=None, verifyConnection=VERIFY_CONNECTION_NONE):
         self._objects = {}
         self._next_object_id = 0
+        self._verify_connection = verifyConnection
         self.bound_port = False
 
         host = ''
@@ -72,6 +88,11 @@ class NukeInternal:
 				client.close()
 
     def recode_data(self, data, recode_object_func):
+        '''
+        Recode some data with the passed recode function
+        This deals with passing data both to and from the interim format,
+        and recursively recoding lists and dictionaries.
+        '''
         if type(data) in basicTypes or isinstance(data, Exception):
             return data
         elif type(data) in listTypes:
@@ -91,35 +112,81 @@ class NukeInternal:
             return recode_object_func(data)
 
     def encode_data(self, data):
+        '''
+        Encode data to send back to the client
+        '''
         return self.recode_data(data, self.encode_data_object)
 
     def decode_data(self, data):
+        '''
+        Decode data that the client has passed through
+        '''
         return self.recode_data(data, self.decode_data_object)
 
     def encode_data_object(self, data):
+        '''
+        Encode an object that cannot be directly passed.
+        Stores the object, and creates a dictionary with the
+        id of the stored object
+        '''
         this_object_id = self._next_object_id
         self._next_object_id += 1
         self._objects[this_object_id] = data
         return {'type': "NukeTransferObject", 'id': this_object_id}
 
     def decode_data_object(self, data):
+        '''
+        Gets a stored data object based on the passed id
+        '''
         object_id = data['id']
         return self._objects[object_id]
 
     def encode(self, data):
-        encoded_data = self.encode_data(data)
-        return pickle.dumps(encoded_data)
+        '''
+        Encode some data, and turn it into a pickled stream
+        '''
+        return pickle.dumps(self.encode_data(data))
 
     def decode(self, data):
+        '''
+        Decode a pickle stream of data, ensuring that any Nuke objects are
+        re-linked
+        '''
         return self.decode_data(pickle.loads(data))
 
+    def verify_connection(self, host):
+        '''
+        If the server has specified that new connections need to be verified by
+        the user, pop up a dialog asking them if a connection can be made.
+        '''
+        if self._verify_connection == VERIFY_CONNECTION_NONE or \
+                (self._verify_connection == VERIFY_CONNECTION_ONLY_REMOTE and \
+                 host in ["localhost", os.getenv("HOST")]):
+            return True
+        
+        # If Nuke isn't running in GUI mode, then allow the connection to verify
+        if nuke.GUI:
+            return nuke.executeInMainThreadWithResult(nuke.ask, ("Something is trying to connect to Nuke from %s.\nDo you wish to allow this?" % host,))
+        
+        return True
+        
     def get(self, data):
+        '''
+        Perform whatever action is requested, and return the result
+        '''
         obj = self.get_object(data['id'])
         params = data['parameters']
         result = None
         action = data['action']
         try:
-            if action == "getattr":
+            if data['action'] == "initiate":
+                if self.verify_connection(params):
+                    result = "accept"
+                else:
+                    result = "deny"
+            elif data['action'] == "test":
+                result = True
+            elif data['action'] == "getattr":
                 result = getattr(obj, params)
             elif action == "setattr":
                 setattr(obj, params[0], params[1])
@@ -138,6 +205,12 @@ class NukeInternal:
                 result = str(obj)
             elif action == "repr":
                 result = `obj`
+            elif data['action'] == "del":
+                del obj
+            elif data['action'] == "isinstance":
+                result = obj.__instancecheck__(params)
+            elif data['action'] == "issubclass":
+                result = issubclass(params, obj)
             elif action == "import":
                 result = imp.load_module(params, *imp.find_module(params))
             elif action == "shutdown":
@@ -149,6 +222,14 @@ class NukeInternal:
         return result
 
     def receive(self, data_string):
+        '''
+        Receive the pickled data that has been sent by the client, and
+        do whatever needs to be done with it.
+        If the data is being passed through as a multi-part transfer, store
+        the parts so far and send back a request for the rest.
+        Also, when sending data back, deal with splitting it up into a multi-part
+        message if it is too long.
+        '''
         data = self.decode(data_string)
 
         if isinstance(data, dict) and 'type' in data and data['type'] == "NukeTransferPartialObjectRequest":
@@ -187,6 +268,10 @@ class NukeInternal:
 
 
     def get_object(self, id):
+        '''
+        Get the stored object with the appropriate id.
+        If the id is -1, then get the globals
+        '''
         if id == -1:
             return globals()
         else:
@@ -208,7 +293,7 @@ class NukeManagedServer(NukeInternal):
     def __init__(self, port=None, manager_port=None, manager_host='localhost'):
         self.manager_port = manager_port
         self.manager_host = manager_host
-        NukeInternal.__init__(self, port)
+        NukeInternal.__init__(self, port, VERIFY_CONNECTION_NONE)
 
     def start_server(self, socket):
         '''

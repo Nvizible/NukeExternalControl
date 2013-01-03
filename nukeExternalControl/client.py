@@ -25,7 +25,7 @@ except TypeError:
         THIS_FILE = os.path.abspath(THIS_FILE)
 
 
-class NukeConnection():
+class NukeConnection(object):
     '''
     If 'port' is specified, the client will attempt to connect
     to a command server on that port, raising an exception
@@ -55,15 +55,25 @@ class NukeConnection():
             if self._port == -1:
                 raise NukeConnectionError("Connection with Nuke failed")
             self.is_active = True
+        
+        if not self.authenticate_connection():
+            self.is_active = False
+            raise NukeConnectionError("Connection with Nuke denied")
 
     def find_connection_port(self, start_port, end_port):
+        '''
+        Find the first available open port between start_port and end_port
+        '''
         for port in range(start_port, end_port + 1):
             self._port = port
             if self.test_connection():
                 return port
         return -1
-
-    def send(self, data):#
+    
+    def send(self, data):
+        '''
+        Send some ASCII data to the server, and then wait for a response
+        '''
         try:
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((self._host, self._port))
@@ -72,27 +82,50 @@ class NukeConnection():
             s.close()
         except socket.error:
             raise NukeConnectionError("Connection with Nuke failed")
-
+            
         return result
-
-    def test_connection(self):
-        try:
-            self.get("test")
+    
+    def authenticate_connection(self):
+        '''
+        Pass a message to the server identifying where the client is coming from,
+        and give the server the option of refusing to talk.
+        '''
+        if self._host == "localhost":
+            host = "localhost"
+        else:
+            host = os.getenv("HOST")
+        
+        if self.get("initiate", parameters = host) == "accept":
             return True
+        return False
+    
+    def test_connection(self):
+        '''
+        Test to see if the connection is working.
+        The 'test' action should return True
+        '''
+        try:
+            return self.get("test")
         except NukeConnectionError, e:
             return False
-
+    
     def get(self, item_type, item_id = -1, parameters = None):
+        '''
+        Encode the action, object and parameters and pass them over the socket connection.
+        If the pickled data is too long, send it as a multi-part message.
+        Decode any returned data, joining together multiple parts as necessary,
+        and return (or raise, in the case of an Exception) the result.
+        '''
         try:
             data = {'action': item_type, 'id': item_id, 'parameters': parameters}
             encoded = pickle.dumps(self.encode(data))
-
+            
             if len(encoded) > MAX_SOCKET_BYTES:
                 encodedBits = []
                 while encoded:
                     encodedBits.append(encoded[:MAX_SOCKET_BYTES])
                     encoded = encoded[MAX_SOCKET_BYTES:]
-
+                
                 for i in range(len(encodedBits)):
                     result = pickle.loads(self.send(pickle.dumps({'type': "NukeTransferPartialObject", 'part': i, 'part_count': len(encodedBits), 'data': encodedBits[i]})))
                     if i < (len(encodedBits) - 1):
@@ -109,14 +142,14 @@ class NukeConnection():
                     result = pickle.loads(returnData)
                     data += result['data']
                     nextPart += 1
-
+                
                 result = pickle.loads(data)
         except Exception, e:
             raise e
-
+        
         if isinstance(result, Exception):
             raise result
-
+        
         return result
 
     def shutdown_server(self):
@@ -134,33 +167,84 @@ class NukeConnection():
         return self.get('shutdown')
 
     def get_object_attribute(self, obj_id, property_name):
+        '''
+        Get an attribute from an object on the server
+        result = object.property_name
+        '''
         return self.decode(self.get("getattr", obj_id, property_name))
-
+    
     def set_object_attribute(self, obj_id, property_name, value):
+        '''
+        Set an attribute on an object on the server
+        object.property_name = value
+        '''
         return self.decode(self.get("setattr", obj_id, (property_name, value)))
-
+    
     def get_object_item(self, obj_id, property_name):
+        '''
+        Get an item from an object on the server
+        result = object[property_name]
+        '''
         return self.decode(self.get("getitem", obj_id, property_name))
-
+    
     def set_object_item(self, obj_id, property_name, value):
+        '''
+        Set an item on an object on the server
+        object[property_name] = value
+        '''
         return self.decode(self.get("setitem", obj_id, (property_name, value)))
-
+    
     def call_object_function(self, obj_id, parameters):
+        '''
+        Call an object on the server
+        result = object(parameters)
+        '''
         return self.decode(self.get("call", obj_id, parameters))
-
+    
     def get_object_length(self, obj_id):
+        '''
+        Get the length of an object on the server
+        result = len(object)
+        '''
         return self.decode(self.get("len", obj_id))
-
+    
     def get_object_string(self, obj_id):
+        '''
+        Get the string equivalent of an object on the server
+        result = str(object)
+        '''
         return self.decode(self.get("str", obj_id))
-
+    
     def get_object_repr(self, obj_id):
+        '''
+        Get the representation of an object on the server
+        result = `object`
+        '''
         return self.decode(self.get("repr", obj_id))
-
+    
+    def delete_object(self, obj_id):
+        return self.decode(self.get("del", obj_id))
+    
+    def get_object_isinstance(self, obj_id, instance):
+        return self.decode(self.get("isinstance", obj_id, instance))
+    
+    def get_object_issubclass(self, obj_id, subclass):
+        return self.decode(self.get("issubclass", obj_id, subclass))
+    
     def import_module(self, module_name):
+        '''
+        Import a module on the server
+        import module_name
+        return module_name
+        '''
         return self.decode(self.get("import", parameters = module_name))
-
+    
     def recode_data(self, data, recode_object_func):
+        '''
+        Recode some data with the passed recode function
+        This deals with passing data both to and from the interim format,
+        and recursively recoding lists and dictionaries.
+        '''
         if type(data) in basicTypes:
             return data
         elif type(data) in listTypes:
@@ -178,75 +262,183 @@ class NukeConnection():
                 return newDict
         else:
             return recode_object_func(data)
-
+            
     def encode_data(self, data):
+        '''
+        Encode data to send to the server
+        '''
         return self.recode_data(data, self.encode_data_object)
-
+    
     def decode_data(self, data):
+        '''
+        Decode data that the server has sent back
+        '''
         return self.recode_data(data, self.decode_data_object)
-
+    
     def encode_data_object(self, data):
+        '''
+        Encode any NukeObject instances so that they can be
+        turned back into their actual objects on the server end
+        '''
         if isinstance(data, NukeObject):
             return {'type': "NukeTransferObject", 'id': data._id}
         else:
             raise TypeError("Invalid object type being passed through connection: '%s'" % data)
-
+    
     def decode_data_object(self, data):
+        '''
+        Convert a dictionary representing an object on the server into
+        a NukeObject instance
+        '''
         return NukeObject(self, data['id'])
-
+    
     def encode(self, data):
+        '''
+        Encode some data, and turn it into a pickled stream
+        '''
         return self.encode_data(data)
-
+    
     def decode(self, data):
+        '''
+        Decode a pickle stream of data, ensuring that any NukeObject
+        instances are created
+        '''
         return self.decode_data(data)
-
+    
     def __getattr__(self, attrname):
+        '''
+        Get a globals-level item from the server, by requesting it as an
+        attribute from the connection object
+        '''
         return self.get_object_item(-1, attrname)
-
+    
     def __getitem__(self, itemname):
+        '''
+        Getting an item from the connection object works in the same way
+        as getting an attribute
+        '''
         return self.__getattr__(itemname)
-
+    
     def __repr__(self):
+        '''
+        Return a string representation of the connection object
+        '''
         return object.__repr__(self).replace("instance object", "NukeConnection instance")
-
+    
     def __str__(self):
+        '''
+        Return a string representation of the connection object
+        '''
         return self.__repr__()
 
 
-class NukeObject():
+class NukeObject(object):
+    '''
+    The class that is used on the client to represent objects on the server
+    inside Nuke.
+    This class deals with catching anything that is called on itself and
+    ensuring that it is passed through to the server, and the appropriate
+    result is returned
+    '''
     def __init__(self, connection, id):
         self.__dict__['_id'] = id
         self.__dict__['_connection'] = connection
-
+    
     def __getattr__(self, attrname):
-        if attrname[0] == "_":
+        '''
+        Get an attribute from the object.
+        If the requested attribute begins with a _, then get it from
+        self.__dict__, otherwise request it from the server
+
+        result = object.attrname
+        '''
+        if attrname in self.__dict__:
             return self.__dict__[attrname]
         else:
             return self._connection.get_object_attribute(self._id, attrname)
-
+        
     def __setattr__(self, attrname, value):
+        '''
+        Set an attribute on the object
+        
+        object.attrname = value
+        '''
         return self._connection.set_object_attribute(self._id, attrname, value)
-
+        
     def __getitem__(self, itemname):
+        '''
+        Get an item from the object
+        
+        result = object[itemname]
+        '''
         return self._connection.get_object_item(self._id, itemname)
-
+    
     def __setitem__(self, itemname, value):
+        '''
+        Set an item on the object
+        
+        object[itemname] = value
+        '''
         return self._connection.set_object_item(self._id, itemname, value)
-
+    
     def __call__(self, *args, **kwargs):
+        '''
+        Call the object with the passed arguments
+        
+        result = object(*args, **kwargs)
+        '''
         return self._connection.call_object_function(self._id, {'args': args, 'kwargs': kwargs})
-
+    
     def __len__(self):
+        '''
+        Get the length of the object
+        
+        result = len(object)
+        '''
         return self._connection.get_object_length(self._id)
-
+    
     def __str__(self):
+        '''
+        Get the string equivalent of the object
+        
+        result = str(object)
+        '''
         return self._connection.get_object_string(self._id)
-
+    
     def __repr__(self):
+        '''
+        Get the representation of the object
+        
+        result = `object`
+        '''
         return self._connection.get_object_repr(self._id)
 
+    def __del__(self):
+        '''
+        Delete an object
+        
+        del object
+        '''
+        return self._connection.delete_object(self._id)
+       
+    def __instancecheck__(cls, inst):
+        '''
+        Check whether the object is an instance of a specific class
+        
+        result = isinstance(inst, cls)
+        '''
+        return cls._connection.get_object_isinstance(cls._id, inst)
+    
+    def __subclasscheck__(self, subclass):
+        '''
+        Check whether the object is an subclass of a specific class
+        
+        result = isinstance(object, cls)
+        '''
+        return self._connection.get_object_issubclass(self._id, subclass)
 
-class NukeCommandManager():
+
+class NukeCommandManager(object):
     '''
     This class internally manages a Nuke command client-server pair.
     It is designed to be instantiated as the 'as' assignment in a
@@ -423,7 +615,6 @@ def start_managed_nuke_server(manager_port=None):
     '''
     import nukeExternalControl.server as comServer
     comServer.NukeManagedServer(manager_port=manager_port)
-
 
 if __name__ == '__main__':
     manager_port = None
