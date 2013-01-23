@@ -12,6 +12,7 @@ import nuke
 
 from nukeExternalControl.common import *
 
+
 VERIFY_CONNECTION_NONE = 0
 VERIFY_CONNECTION_ALWAYS = 1
 VERIFY_CONNECTION_ONLY_REMOTE = 2
@@ -163,13 +164,13 @@ class NukeInternal(object):
                 (self._verify_connection == VERIFY_CONNECTION_ONLY_REMOTE and \
                  host in ["localhost", os.getenv("HOST")]):
             return True
-        
+
         # If Nuke isn't running in GUI mode, then allow the connection to verify
         if nuke.GUI:
             return nuke.executeInMainThreadWithResult(nuke.ask, ("Something is trying to connect to Nuke from %s.\nDo you wish to allow this?" % host,))
-        
+
         return True
-        
+
     def get(self, data):
         '''
         Perform whatever action is requested, and return the result
@@ -293,7 +294,7 @@ class NukeManagedServer(NukeInternal):
     def __init__(self, port=None, manager_port=None, manager_host='localhost'):
         self.manager_port = manager_port
         self.manager_host = manager_host
-        NukeInternal.__init__(self, port, VERIFY_CONNECTION_NONE)
+        super(NukeManagedServer, self).__init__(port=port, verifyConnection=VERIFY_CONNECTION_NONE)
 
     def start_server(self, socket):
         '''
@@ -301,7 +302,7 @@ class NukeManagedServer(NukeInternal):
         the main server loop.
         '''
         self.manager_callback(self.bound_port)
-        NukeInternal.start_server(self, socket)
+        super(NukeManagedServer, self).start_server(socket)
 
     def manager_callback(self, status):
         '''
