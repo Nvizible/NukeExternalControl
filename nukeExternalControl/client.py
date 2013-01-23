@@ -116,36 +116,33 @@ class NukeConnection(object):
         Decode any returned data, joining together multiple parts as necessary,
         and return (or raise, in the case of an Exception) the result.
         '''
-        try:
-            data = {'action': item_type, 'id': item_id, 'parameters': parameters}
-            encoded = pickle.dumps(self.encode(data))
+        data = {'action': item_type, 'id': item_id, 'parameters': parameters}
+        encoded = pickle.dumps(self.encode(data))
 
-            if len(encoded) > MAX_SOCKET_BYTES:
-                encodedBits = []
-                while encoded:
-                    encodedBits.append(encoded[:MAX_SOCKET_BYTES])
-                    encoded = encoded[MAX_SOCKET_BYTES:]
+        if len(encoded) > MAX_SOCKET_BYTES:
+            encodedBits = []
+            while encoded:
+                encodedBits.append(encoded[:MAX_SOCKET_BYTES])
+                encoded = encoded[MAX_SOCKET_BYTES:]
 
-                for i in range(len(encodedBits)):
-                    result = pickle.loads(self.send(pickle.dumps({'type': "NukeTransferPartialObject", 'part': i, 'part_count': len(encodedBits), 'data': encodedBits[i]})))
-                    if i < (len(encodedBits) - 1):
-                        if not (isinstance(result, dict) and 'type' in result and result['type'] == "NukeTransferPartialObjectRequest" and 'part' in result and result['part'] == i+1):
-                            raise NukeConnectionError("Unexpected response to partial object")
-            else:
-                result = pickle.loads(self.send(encoded))
+            for i in range(len(encodedBits)):
+                result = pickle.loads(self.send(pickle.dumps({'type': "NukeTransferPartialObject", 'part': i, 'part_count': len(encodedBits), 'data': encodedBits[i]})))
+                if i < (len(encodedBits) - 1):
+                    if not (isinstance(result, dict) and 'type' in result and result['type'] == "NukeTransferPartialObjectRequest" and 'part' in result and result['part'] == i+1):
+                        raise NukeConnectionError("Unexpected response to partial object")
+        else:
+            result = pickle.loads(self.send(encoded))
 
-            if isinstance(result, dict) and 'type' in result and result['type'] == "NukeTransferPartialObject":
-                data = result['data']
-                nextPart = 1
-                while nextPart < result['part_count']:
-                    returnData = self.send(pickle.dumps({'type': "NukeTransferPartialObjectRequest", 'part': nextPart}))
-                    result = pickle.loads(returnData)
-                    data += result['data']
-                    nextPart += 1
+        if isinstance(result, dict) and 'type' in result and result['type'] == "NukeTransferPartialObject":
+            data = result['data']
+            nextPart = 1
+            while nextPart < result['part_count']:
+                returnData = self.send(pickle.dumps({'type': "NukeTransferPartialObjectRequest", 'part': nextPart}))
+                result = pickle.loads(returnData)
+                data += result['data']
+                nextPart += 1
 
-                result = pickle.loads(data)
-        except Exception, e:
-            raise e
+            result = pickle.loads(data)
 
         if isinstance(result, Exception):
             raise result
