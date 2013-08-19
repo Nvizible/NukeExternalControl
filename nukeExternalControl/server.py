@@ -134,6 +134,8 @@ class NukeInternal:
                 result = str(obj)
             elif action == "repr":
                 result = `obj`
+            elif action == "nonzero":
+                result = bool(obj)
             elif action == "import":
                 result = imp.load_module(params, *imp.find_module(params))
             elif action == "shutdown":

@@ -151,6 +151,9 @@ class NukeConnection():
     def get_object_repr(self, obj_id):
         return self.decode(self.get("repr", obj_id))
 
+    def get_object_nonzero(self, obj_id):
+        return self.decode(self.get("nonzero", obj_id))        
+
     def import_module(self, module_name):
         return self.decode(self.get("import", parameters = module_name))
 
@@ -212,8 +215,11 @@ class NukeObject():
         self.__dict__['_connection'] = connection
 
     def __getattr__(self, attrname):
-        if attrname[0] == "_":
-            return self.__dict__[attrname]
+        if attrname.startswith('__') or attrname in ('_id', '_connection'):
+            try:
+                return self.__dict__[attrname]
+            except KeyError:
+                raise AttributeError(attrname)
         else:
             return self._connection.get_object_attribute(self._id, attrname)
 
@@ -237,6 +243,9 @@ class NukeObject():
 
     def __repr__(self):
         return self._connection.get_object_repr(self._id)
+
+    def __nonzero__(self):
+        return self._connection.get_object_nonzero(self._id)
 
 
 class NukeCommandManager():
