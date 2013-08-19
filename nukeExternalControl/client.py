@@ -228,6 +228,9 @@ class NukeConnection(object):
     def get_object_issubclass(self, obj_id, subclass):
         return self.decode(self.get("issubclass", obj_id, subclass))
 
+    def get_object_nonzero(self, obj_id):
+        return self.decode(self.get("nonzero", obj_id))        
+
     def import_module(self, module_name):
         '''
         Import a module on the server
@@ -350,7 +353,10 @@ class NukeObject(object):
         result = object.attrname
         '''
         if attrname in self.__dict__:
-            return self.__dict__[attrname]
+            try:
+                return self.__dict__[attrname]
+            except KeyError:
+                raise AttributeError(attrname)
         else:
             return self._connection.get_object_attribute(self._id, attrname)
 
@@ -417,6 +423,9 @@ class NukeObject(object):
         del object
         '''
         return self._connection.delete_object(self._id)
+
+    def __nonzero__(self):
+        return self._connection.get_object_nonzero(self._id)
 
     def __instancecheck__(cls, inst):
         '''

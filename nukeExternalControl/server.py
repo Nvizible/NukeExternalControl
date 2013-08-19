@@ -212,6 +212,8 @@ class NukeInternal(object):
                 result = obj.__instancecheck__(params)
             elif data['action'] == "issubclass":
                 result = issubclass(params, obj)
+            elif action == "nonzero":
+                result = bool(obj)
             elif action == "import":
                 result = imp.load_module(params, *imp.find_module(params))
             elif action == "shutdown":
