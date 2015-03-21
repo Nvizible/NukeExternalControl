@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 import os
 
 SOCKET_BUFFER_SIZE = 4096

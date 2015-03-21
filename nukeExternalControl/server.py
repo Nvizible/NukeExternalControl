@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 '''
 This module defines the server-side classes for the Nuke command server interface.
 
