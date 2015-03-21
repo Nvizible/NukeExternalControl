@@ -6,7 +6,7 @@ This module defines the server-side classes for the Nuke command server interfac
 It can also be passed as an executable to automatically start server instances.
 '''
 import imp
-import pickle
+import yaml
 import socket
 import threading
 
@@ -146,16 +146,16 @@ class NukeInternal(object):
 
     def encode(self, data):
         '''
-        Encode some data, and turn it into a pickled stream
+        Encode some data
         '''
-        return pickle.dumps(self.encode_data(data))
+        return yaml.dump(self.encode_data(data))
 
     def decode(self, data):
         '''
-        Decode a pickle stream of data, ensuring that any Nuke objects are
+        Decode an encoded stream of data, ensuring that any Nuke objects are
         re-linked
         '''
-        return self.decode_data(pickle.loads(data))
+        return self.decode_data(yaml.safe_load(data))
 
     def verify_connection(self, host):
         '''
@@ -228,7 +228,7 @@ class NukeInternal(object):
 
     def receive(self, data_string):
         '''
-        Receive the pickled data that has been sent by the client, and
+        Receive the encoded data that has been sent by the client, and
         do whatever needs to be done with it.
         If the data is being passed through as a multi-part transfer, store
         the parts so far and send back a request for the rest.
@@ -249,10 +249,10 @@ class NukeInternal(object):
             self.partialData += data['data']
 
             if data['part'] == (data['part_count'] - 1):
-                data = pickle.loads(self.partialData)
+                data = yaml.safe_load(self.partialData)
             else:
                 nextPart = data['part'] + 1
-                return pickle.dumps({'type': "NukeTransferPartialObjectRequest", 'part': nextPart})
+                return yaml.dump({'type': "NukeTransferPartialObjectRequest", 'part': nextPart})
 
         encoded = self.encode(self.get(data))
 
@@ -264,7 +264,7 @@ class NukeInternal(object):
 
             self.partialObjects = {}
             for i in range(len(encodedBits)):
-                self.partialObjects[i] = pickle.dumps({'type': "NukeTransferPartialObject", 'part': i, 'part_count': len(encodedBits), 'data': encodedBits[i]})
+                self.partialObjects[i] = yaml.dump({'type': "NukeTransferPartialObject", 'part': i, 'part_count': len(encodedBits), 'data': encodedBits[i]})
 
             encoded = self.partialObjects[0]
             del self.partialObjects[0]

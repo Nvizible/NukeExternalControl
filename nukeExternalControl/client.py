@@ -7,7 +7,7 @@ It also functions as an executable to launch NukeCommandManager instances.
 '''
 import os
 import inspect
-import pickle
+import yaml
 import socket
 import subprocess
 import sys
@@ -114,12 +114,12 @@ class NukeConnection(object):
     def get(self, item_type, item_id = -1, parameters = None):
         '''
         Encode the action, object and parameters and pass them over the socket connection.
-        If the pickled data is too long, send it as a multi-part message.
+        If the encoded data is too long, send it as a multi-part message.
         Decode any returned data, joining together multiple parts as necessary,
         and return (or raise, in the case of an Exception) the result.
         '''
         data = {'action': item_type, 'id': item_id, 'parameters': parameters}
-        encoded = pickle.dumps(self.encode(data))
+        encoded = yaml.dump(self.encode(data))
 
         if len(encoded) > MAX_SOCKET_BYTES:
             encodedBits = []
@@ -128,23 +128,23 @@ class NukeConnection(object):
                 encoded = encoded[MAX_SOCKET_BYTES:]
 
             for i in range(len(encodedBits)):
-                result = pickle.loads(self.send(pickle.dumps({'type': "NukeTransferPartialObject", 'part': i, 'part_count': len(encodedBits), 'data': encodedBits[i]})))
+                result = yaml.safe_load(self.send(yaml.dump({'type': "NukeTransferPartialObject", 'part': i, 'part_count': len(encodedBits), 'data': encodedBits[i]})))
                 if i < (len(encodedBits) - 1):
                     if not (isinstance(result, dict) and 'type' in result and result['type'] == "NukeTransferPartialObjectRequest" and 'part' in result and result['part'] == i+1):
                         raise NukeConnectionError("Unexpected response to partial object")
         else:
-            result = pickle.loads(self.send(encoded))
+            result = yaml.safe_load(self.send(encoded))
 
         if isinstance(result, dict) and 'type' in result and result['type'] == "NukeTransferPartialObject":
             data = result['data']
             nextPart = 1
             while nextPart < result['part_count']:
-                returnData = self.send(pickle.dumps({'type': "NukeTransferPartialObjectRequest", 'part': nextPart}))
-                result = pickle.loads(returnData)
+                returnData = self.send(yaml.dump({'type': "NukeTransferPartialObjectRequest", 'part': nextPart}))
+                result = yaml.safe_load(returnData)
                 data += result['data']
                 nextPart += 1
 
-            result = pickle.loads(data)
+            result = yaml.safe_load(data)
 
         if isinstance(result, Exception):
             raise result
@@ -296,13 +296,13 @@ class NukeConnection(object):
 
     def encode(self, data):
         '''
-        Encode some data, and turn it into a pickled stream
+        Encode some data, and turn it into a encoded stream
         '''
         return self.encode_data(data)
 
     def decode(self, data):
         '''
-        Decode a pickle stream of data, ensuring that any NukeObject
+        Decode an encoded stream of data, ensuring that any NukeObject
         instances are created
         '''
         return self.decode_data(data)
@@ -563,7 +563,7 @@ class NukeCommandManager(object):
                             raise NukeManagerError("Server process failed to start properly.")
                     data = server.recv(SOCKET_BUFFER_SIZE)
                     if data:
-                        serverData = pickle.loads(data)
+                        serverData = yaml.safe_load(data)
                         server.close()
                         if not serverData[0]:
                             raise NukeServerError("Server could not find port to bind to.")
@@ -611,10 +611,10 @@ class NukeCommandManager(object):
         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         try:
             s.connect(('', self.server_port))
-            s.send(pickle.dumps(packet))
+            s.send(yaml.dump(packet))
             result = s.recv(SOCKET_BUFFER_SIZE)
             s.close()
-            return pickle.loads(result)
+            return yaml.safe_load(result)
         except socket.error:
             # Failed to connect to server port (server is dead?)
             raise NukeServerError("Server failed to initialize.")
