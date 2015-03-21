@@ -12,7 +12,7 @@ import threading
 
 import nuke
 
-from nukeExternalControl.common import *
+from .common import *
 
 
 VERIFY_CONNECTION_NONE = 0

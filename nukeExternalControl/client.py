@@ -15,7 +15,7 @@ import threading
 import time
 
 
-from nukeExternalControl.common import *
+from .common import *
 
 
 try:
@@ -231,7 +231,7 @@ class NukeConnection(object):
         return self.decode(self.get("issubclass", obj_id, subclass))
 
     def get_object_nonzero(self, obj_id):
-        return self.decode(self.get("nonzero", obj_id))        
+        return self.decode(self.get("nonzero", obj_id))
 
     def import_module(self, module_name):
         '''
@@ -427,6 +427,11 @@ class NukeObject(object):
         return self._connection.delete_object(self._id)
 
     def __nonzero__(self):
+        '''
+        Get whether an object is considered non-zero (bool)
+
+        result = bool(object)
+        '''
         return self._connection.get_object_nonzero(self._id)
 
     def __instancecheck__(cls, inst):
