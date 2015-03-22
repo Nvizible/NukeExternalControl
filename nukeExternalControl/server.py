@@ -9,6 +9,7 @@ import imp
 import yaml
 import socket
 import threading
+import errno
 
 import nuke
 
@@ -59,7 +60,10 @@ class NukeInternal(object):
                 s.bind((host, port))
             except socket.error as err:
                 # Don't error if socket is already in use
-                if err.errno != 98:
+                # Changed to reference value in errno module
+                # as it turns out that it's different on OSX (48)
+                # and Linux (98)!
+                if err.errno != errno.EADDRINUSE:
                     raise
             else:
                 self.bound_port = True
@@ -189,6 +193,9 @@ class NukeInternal(object):
                     result = "deny"
             elif data['action'] == "test":
                 result = True
+            elif data['action'] == "identify":
+                rootName = nuke.root().name()
+                result = rootName if rootName != "Root" else "Untitled"
             elif data['action'] == "getattr":
                 result = getattr(obj, params)
             elif action == "setattr":

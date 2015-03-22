@@ -35,11 +35,12 @@ class NukeConnection(object):
 
     Otherwise, the standard port search routine runs.
     '''
-    def __init__(self, port=None, start_port=None, end_port=None, host="localhost", instance=0):
+    def __init__(self, port=None, start_port=None, end_port=None, host="localhost", instance=0, authenticate=True):
         self._objects = {}
         self._functions = {}
         self._host = host
         self.is_active = False
+        self.authenticated = False
         if port:
             self._port = port
             if not self.test_connection():
@@ -58,9 +59,29 @@ class NukeConnection(object):
                 raise NukeConnectionError("Connection with Nuke failed")
             self.is_active = True
 
-        if not self.authenticate_connection():
-            self.is_active = False
-            raise NukeConnectionError("Connection with Nuke denied")
+        if authenticate:
+            if not self.authenticate_connection():
+                self.is_active = False
+                raise NukeConnectionError("Connection with Nuke denied")
+
+    @classmethod
+    def find_active_servers(cls, start_port=None, end_port=None, host="localhost"):
+        '''
+        Get a list of the active servers in the port range
+        '''
+        if not start_port:
+            start_port = DEFAULT_START_PORT
+        if not end_port:
+            end_port = DEFAULT_END_PORT
+        servers = []
+        for port in range(start_port, end_port + 1):
+            try:
+                conn = cls(port=port, host=host, authenticate=False)
+                identity = conn.identify_connection()
+                servers.append({'connection': conn, 'identity': identity})
+            except NukeConnectionError:
+                pass
+        return servers
 
     def find_connection_port(self, start_port, end_port):
         '''
@@ -97,9 +118,8 @@ class NukeConnection(object):
         else:
             host = os.getenv("HOST")
 
-        if self.get("initiate", parameters = host) == "accept":
-            return True
-        return False
+        if self.get("initiate", parameters = host, require_authenticated = False) == "accept":
+            self.authenticated = True
 
     def test_connection(self):
         '''
@@ -107,17 +127,30 @@ class NukeConnection(object):
         The 'test' action should return True
         '''
         try:
-            return self.get("test")
+            return self.get("test", require_authenticated = False)
         except NukeConnectionError, e:
             return False
 
-    def get(self, item_type, item_id = -1, parameters = None):
+    def identify_connection(self):
+        '''
+        Get an identification from the remote side
+        of the connection
+        '''
+        return self.get("identify", require_authenticated = False)
+
+    def get(self, item_type, item_id = -1, parameters = None, require_authenticated = True):
         '''
         Encode the action, object and parameters and pass them over the socket connection.
         If the encoded data is too long, send it as a multi-part message.
         Decode any returned data, joining together multiple parts as necessary,
         and return (or raise, in the case of an Exception) the result.
+        If require_authenticated is True, it will only send the message if the remote
+        side has approved. This should only be set to False when testing and identifying
+        remote servers
         '''
+        if require_authenticated and not self.authenticated:
+            raise NukeConnectionError("Connection not authenticated")
+
         data = {'action': item_type, 'id': item_id, 'parameters': parameters}
         encoded = yaml.dump(self.encode(data))
 
